@@ -202,7 +202,6 @@ struct AppSym<Host> {
 /// A `Reloadable` represents a handle to library that can be live reloaded.
 pub struct Reloadable<Host> {
     path: PathBuf,
-    loaded_path: PathBuf,
     sym: Option<AppSym<Host>>,
     state: Vec<u64>,
     _watcher: RecommendedWatcher,
@@ -270,9 +269,7 @@ impl<Host> Reloadable<Host> {
     ///
     /// [`live_reload!`]: macro.live_reload.html
     pub fn new<P: AsRef<Path>>(path: P, host: Host) -> Result<Self, Error> {
-        let loaded_path = path.as_ref().with_file_name("loaded-lib.dll");
-        fs::copy(path.as_ref(), &loaded_path)?;
-        let sym = AppSym::new(&loaded_path)?;
+        let sym = Self::load(path.as_ref())?;
         let size = (unsafe { &**sym.api }.size)();
         let (tx, rx) = channel();
         let mut watcher = notify::watcher(tx, Duration::from_secs(1))?;
@@ -285,7 +282,6 @@ impl<Host> Reloadable<Host> {
 
         let mut app = Reloadable {
             path: new_path.canonicalize()?,
-            loaded_path: loaded_path.canonicalize()?,
             sym: Some(sym),
             state: Vec::new(),
             _watcher: watcher,
@@ -341,14 +337,25 @@ impl<Host> Reloadable<Host> {
             (unsafe { &***api }.unload)(&mut self.host, Self::get_state_ptr(&mut self.state));
         }
         self.sym = None;
-        fs::copy(&self.path, &self.loaded_path)?;
-        let sym = AppSym::new(&self.loaded_path)?;
+        let sym = Self::load(&self.path)?;
         // @Avoid reallocating if unnecessary
         self.realloc_buffer((unsafe { &**sym.api }.size)());
         (unsafe { &**sym.api }.reload)(&mut self.host, Self::get_state_ptr(&mut self.state));
         self.sym = Some(sym);
 
         Ok(())
+    }
+
+    #[cfg(windows)]
+    fn load(path: &Path) -> Result<AppSym<Host>, Error> {
+        let live_path = path.with_extension("live.dll");
+        fs::copy(&path, &live_path)?;
+        AppSym::new(&live_path)
+    }
+
+    #[cfg(not(windows))]
+    fn load(path: &Path) -> Result<AppSym<Host>, Error> {
+        AppSym::new(&path)
     }
 
     /// Call the update method on the library.
