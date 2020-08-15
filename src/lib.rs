@@ -179,7 +179,6 @@
 extern crate libloading;
 extern crate notify;
 
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 use std::time::Duration;
@@ -349,7 +348,7 @@ impl<Host> Reloadable<Host> {
     #[cfg(windows)]
     fn load(path: &Path) -> Result<AppSym<Host>, Error> {
         let live_path = path.with_extension("live.dll");
-        fs::copy(&path, &live_path)?;
+        std::fs::copy(&path, &live_path)?;
         AppSym::new(&live_path)
     }
 
